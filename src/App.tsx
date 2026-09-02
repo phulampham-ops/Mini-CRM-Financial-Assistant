@@ -3,13 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Deal, Customer, Activity, PipelineStage } from './types/crm';
 import { BalanceSheetTT200 } from './types/bctc';
 import { INITIAL_DEALS, INITIAL_CUSTOMERS, INITIAL_ACTIVITIES } from './data/mockCrmData';
 import { SAMPLE_BCTC_VINAMILK } from './data/mockBctcData';
-import { exportCrmToExcel } from './utils/excelParser';
+import { exportCrmToExcel, downloadSampleCrmExcelTemplate } from './utils/excelParser';
 
+import { Sidebar, ActiveTab } from './components/Sidebar';
 import { Header } from './components/Header';
 import { CrmDashboard } from './components/CrmDashboard';
 import { PipelineKanban } from './components/PipelineKanban';
@@ -21,9 +22,8 @@ import { ExcelImportModal } from './components/ExcelImportModal';
 import { DealDetailModal } from './components/DealDetailModal';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<
-    'DASHBOARD' | 'KANBAN' | 'CUSTOMERS' | 'ACTIVITIES' | 'BCTC' | 'AI_ASSISTANT'
-  >('DASHBOARD');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('DASHBOARD');
+  const [isSidebarOpenMobile, setIsSidebarOpenMobile] = useState(false);
 
   const [deals, setDeals] = useState<Deal[]>(INITIAL_DEALS);
   const [customers, setCustomers] = useState<Customer[]>(INITIAL_CUSTOMERS);
@@ -37,6 +37,26 @@ export default function App() {
   // AI Navigation State
   const [aiInitialAction, setAiInitialAction] = useState<string>('DRAFT_EMAIL');
   const [aiInitialDeal, setAiInitialDeal] = useState<Deal | undefined>(undefined);
+
+  // Badges and alerts calculation
+  const staleDealsCount = useMemo(() => {
+    const today = new Date().getTime();
+    return deals.filter((d) => {
+      if (d.stage === 'CLOSED_WON' || d.stage === 'CLOSED_LOST') return false;
+      const contactTime = new Date(d.lastContactDate).getTime();
+      const diffDays = (today - contactTime) / (1000 * 60 * 60 * 24);
+      return diffDays > 14;
+    }).length;
+  }, [deals]);
+
+  const overdueTasksCount = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    return activities.filter((a) => a.status === 'PENDING' && a.date < todayStr).length;
+  }, [activities]);
+
+  const activeDealsCount = useMemo(() => {
+    return deals.filter((d) => d.stage !== 'CLOSED_WON' && d.stage !== 'CLOSED_LOST').length;
+  }, [deals]);
 
   // Handlers
   const handleUpdateDealStage = (dealId: string, newStage: PipelineStage) => {
@@ -161,81 +181,102 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800 font-sans antialiased selection:bg-blue-500 selection:text-white">
-      {/* Top Main Navigation Header */}
-      <Header
+    <div className="min-h-screen bg-slate-100 text-slate-800 font-sans antialiased selection:bg-blue-500 selection:text-white flex flex-col">
+      {/* Left Sidebar Navigation (Matching Reference Design) */}
+      <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenImportModal={() => setIsImportModalOpen(true)}
-        onExportExcel={handleExportExcel}
+        isOpenMobile={isSidebarOpenMobile}
+        onCloseMobile={() => setIsSidebarOpenMobile(false)}
+        dealsCount={activeDealsCount}
+        staleDealsCount={staleDealsCount}
+        customersCount={customers.length}
+        overdueTasksCount={overdueTasksCount}
       />
 
-      {/* Body Content Container */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-        {activeTab === 'DASHBOARD' && (
-          <CrmDashboard
-            deals={deals}
-            activities={activities}
-            onSelectDeal={(deal) => setSelectedDealForModal(deal)}
-            onNavigateToAi={handleNavigateToAi}
-            onUpdateDealStage={handleUpdateDealStage}
-          />
-        )}
+      {/* Main Content Area (Offset for Fixed Sidebar on Desktop) */}
+      <div className="lg:pl-72 flex-1 flex flex-col min-w-0">
+        {/* Top Navbar */}
+        <Header
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          onOpenImportModal={() => setIsImportModalOpen(true)}
+          onExportExcel={handleExportExcel}
+          onDownloadTemplate={downloadSampleCrmExcelTemplate}
+          onToggleSidebarMobile={() => setIsSidebarOpenMobile(true)}
+          staleDealsCount={staleDealsCount}
+        />
 
-        {activeTab === 'KANBAN' && (
-          <PipelineKanban
-            deals={deals}
-            onUpdateDealStage={handleUpdateDealStage}
-            onSelectDeal={(deal) => setSelectedDealForModal(deal)}
-            onAddNewDeal={handleAddNewDeal}
-            onNavigateToAi={handleNavigateToAi}
-          />
-        )}
+        {/* Dynamic Page Views */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+          {activeTab === 'DASHBOARD' && (
+            <CrmDashboard
+              deals={deals}
+              activities={activities}
+              onSelectDeal={(deal) => setSelectedDealForModal(deal)}
+              onNavigateToAi={handleNavigateToAi}
+              onUpdateDealStage={handleUpdateDealStage}
+            />
+          )}
 
-        {activeTab === 'CUSTOMERS' && (
-          <CustomerLeadList
-            customers={customers}
-            deals={deals}
-            onAddNewCustomer={handleAddNewCustomer}
-            onSelectCustomer={(cust) => {
-              const matchedDeal = deals.find(
-                (d) => d.customerId === cust.id || d.companyName.toLowerCase().includes(cust.company.toLowerCase())
-              );
-              if (matchedDeal) {
-                setSelectedDealForModal(matchedDeal);
-              } else {
-                alert(`Khách hàng ${cust.company} hiện chưa có hợp đồng/deal trong pipeline. Bấm "Thêm Deal Mới" ở tab Kanban để khởi tạo.`);
-              }
-            }}
-          />
-        )}
+          {activeTab === 'KANBAN' && (
+            <PipelineKanban
+              deals={deals}
+              onUpdateDealStage={handleUpdateDealStage}
+              onSelectDeal={(deal) => setSelectedDealForModal(deal)}
+              onAddNewDeal={handleAddNewDeal}
+              onNavigateToAi={handleNavigateToAi}
+            />
+          )}
 
-        {activeTab === 'ACTIVITIES' && (
-          <ActivityLog
-            activities={activities}
-            deals={deals}
-            onAddNewActivity={handleAddNewActivity}
-            onToggleActivityStatus={handleToggleActivityStatus}
-          />
-        )}
+          {activeTab === 'CUSTOMERS' && (
+            <CustomerLeadList
+              customers={customers}
+              deals={deals}
+              onAddNewCustomer={handleAddNewCustomer}
+              onSelectCustomer={(cust) => {
+                const matchedDeal = deals.find(
+                  (d) => d.customerId === cust.id || d.companyName.toLowerCase().includes(cust.company.toLowerCase())
+                );
+                if (matchedDeal) {
+                  setSelectedDealForModal(matchedDeal);
+                } else {
+                  alert(
+                    `Khách hàng ${cust.company} hiện chưa có hợp đồng/deal trong pipeline. Bấm "Thêm Deal Mới" ở tab Kanban để khởi tạo.`
+                  );
+                }
+              }}
+            />
+          )}
 
-        {activeTab === 'BCTC' && (
-          <BctcAnalyzer
-            bctcData={bctcData}
-            onUpdateBctcData={setBctcData}
-            onRunAiAnalysis={(bctc) => handleNavigateToAi('BCTC_ANALYSIS')}
-          />
-        )}
+          {activeTab === 'ACTIVITIES' && (
+            <ActivityLog
+              activities={activities}
+              deals={deals}
+              onAddNewActivity={handleAddNewActivity}
+              onToggleActivityStatus={handleToggleActivityStatus}
+            />
+          )}
 
-        {activeTab === 'AI_ASSISTANT' && (
-          <AiSalesAssistant
-            deals={deals}
-            bctcData={bctcData}
-            initialActionType={aiInitialAction}
-            initialDeal={aiInitialDeal}
-          />
-        )}
-      </main>
+          {activeTab === 'BCTC' && (
+            <BctcAnalyzer
+              bctcData={bctcData}
+              onUpdateBctcData={setBctcData}
+              onRunAiAnalysis={(bctc) => handleNavigateToAi('BCTC_ANALYSIS')}
+            />
+          )}
+
+          {activeTab === 'AI_ASSISTANT' && (
+            <AiSalesAssistant
+              deals={deals}
+              bctcData={bctcData}
+              initialActionType={aiInitialAction}
+              initialDeal={aiInitialDeal}
+            />
+          )}
+        </main>
+      </div>
 
       {/* Deal Detail Modal */}
       <DealDetailModal
@@ -260,4 +301,3 @@ export default function App() {
     </div>
   );
 }
-

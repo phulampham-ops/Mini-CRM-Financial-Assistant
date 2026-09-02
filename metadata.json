@@ -1,6 +1,6 @@
 {
-  "name": "Mini CRM & Financial Assistant",
-  "description": "Hệ thống Quản lý Bán hàng CRM, Sales Dashboard, Cảnh báo Pipeline kết hợp Phân tích Báo cáo Tài chính Kế toán (Thông tư 200/VAS) & AI Sales Assistant",
+  "name": "CRM CONTROL & AI Financial Sales Executive",
+  "description": "Hệ thống Quản lý Bán hàng B2B CRM kết hợp Trợ lý AI và Phân tích Báo Cáo Tài Chính Thông tư 200/2014/TT-BTC.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
